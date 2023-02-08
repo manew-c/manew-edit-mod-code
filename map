@@ -1,0 +1,246 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_application_1/Pages/survey.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_application_1/Pages/informationPage.dart';
+import 'package:flutter_application_1/Pages/olduserpage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class MapsPage extends StatefulWidget {
+  MapsPage({super.key});
+  @override
+  State<MapsPage> createState() => _MapsPageState();
+}
+
+class _MapsPageState extends State<MapsPage> {
+  final _formKey = GlobalKey<FormState>();
+  late Position userlocation;
+  late GoogleMapController mapController;
+  /*double? dose5cm;
+  double? dose1m;
+  String? note;
+  String? pointname;*/
+
+  void _onMapCreated(GoogleMapController controller) {
+    mapController = controller;
+  }
+
+  Future<Position> _getLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return Future.error('Location services are disabled.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return Future.error('Location permissions are denied');
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      return Future.error(
+          'Location permissions are permanently denied, we cannot request permissions.');
+    }
+
+    userlocation = await Geolocator.getCurrentPosition();
+    return userlocation;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Flexible(
+          child: Column(
+            children: <Widget>[
+              Text('งาน${Point.worksite}จังหวัด${Point.province}'),
+              Text('ผู้ใช้ ${user.username} หัววัด${user.detector}'),
+            ],
+          ),
+        ),
+      ),
+      body: FutureBuilder(
+        future: _getLocation(),
+        builder: (BuildContext context, AsyncSnapshot<dynamic> snapshot) {
+          if (snapshot.hasData) {
+            return GoogleMap(
+              mapType: MapType.normal,
+              onMapCreated: _onMapCreated,
+              myLocationEnabled: true,
+              initialCameraPosition: CameraPosition(
+                target: LatLng(userlocation.latitude, userlocation.longitude),
+                zoom: 15,
+              ),
+            );
+          } else {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  CircularProgressIndicator(),
+                  Text('กำลังโหลด'),
+                ],
+              ),
+            );
+          }
+        },
+      ),
+      floatingActionButton: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          FloatingActionButton.extended(
+            onPressed: () {
+              mapController.animateCamera(CameraUpdate.newLatLngZoom(
+                  LatLng(userlocation.latitude, userlocation.longitude), 18));
+              showDialog(
+                context: context,
+                builder: (context) {
+                  return AlertDialog(
+                    title: Text(
+                        'Your location!\nlat: ${userlocation.latitude} long: ${userlocation.longitude} '),
+                    content: Form(
+                        key: _formKey,
+                        child: Column(
+                          children: <Widget>[
+                            TextFormField(
+                              decoration:
+                                  InputDecoration(hintText: 'กรอกชื่อจุด'),
+                              validator: (value) {
+                                if (value!.isEmpty) {
+                                  return 'Please enter ชื่อจุด';
+                                }
+                                return null;
+                              },
+                              /*onChanged: (value) {
+                                _formKey.currentState?.save();
+                                MAP.pointname = value;
+                              },*/
+                              onSaved: (value) => MAP.pointname = (value!),
+                            ),
+                            TextFormField(
+                              decoration: InputDecoration(
+                                  hintText: 'กรอกค่าDoseที่ 5 cm'),
+                              validator: (value) {
+                                if (value!.isEmpty) {
+                                  return 'Please enter Doseที่ 5 cm';
+                                }
+                                return null;
+                              },
+                              /*onChanged: (value) {
+                                _formKey.currentState?.save();
+                                MAP.dose5cm = double.parse(value);
+                              },*/
+                              onSaved: (value) =>
+                                  MAP.dose5cm = double.parse(value!),
+                            ),
+                            TextFormField(
+                              decoration: InputDecoration(
+                                  hintText: 'กรอกค่าDoseที่ 1 m'),
+                              validator: (value) {
+                                if (value!.isEmpty) {
+                                  return 'Please enter Doseที่ 1 m';
+                                }
+                                return null;
+                              },
+                              /*onChanged: (value) {
+                                _formKey.currentState?.save();
+                                MAP.dose1m = double.parse(value);
+                              },*/
+                              onSaved: (value) =>
+                                  MAP.dose1m = double.parse(value!),
+                            ),
+                            TextFormField(
+                              decoration:
+                                  InputDecoration(hintText: 'กรอกหมายเหตุ'),
+                              validator: (value) {
+                                if (value!.isEmpty) {
+                                  return 'Please enter หมายเหตุ';
+                                }
+                                return null;
+                              },
+                              /*onChanged: (value) {
+                                _formKey.currentState?.save();
+                                MAP.note = value;
+                              },*/
+                              onSaved: (value) => MAP.note = value!,
+                            ),
+                            ElevatedButton(
+                              onPressed: () async {
+                                if (_formKey.currentState!.validate()) {
+                                  _formKey.currentState!.save();
+                                  CollectionReference siteandprovind =
+                                      FirebaseFirestore.instance
+                                          .collection('ไซต์งาน');
+                                  siteandprovind
+                                      .doc(Point.worksite)
+                                      .collection('ผู้วัดรังสี')
+                                      .doc(user.username)
+                                      .collection('หัววัด')
+                                      .doc(user.detector)
+                                      .collection('ชื่อจุด')
+                                      .doc(MAP.pointname)
+                                      .set({
+                                    'doseที่1m': MAP.dose1m,
+                                    'doseที่5cm': MAP.dose5cm,
+                                    'lat': userlocation.latitude,
+                                    'long': userlocation.longitude,
+                                    'note': MAP.note
+                                  });
+                                  _formKey.currentState!.reset();
+                                }
+
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(SnackBar(
+                                  content: Text(
+                                      'โดสที่5$MAP.dose5cm + ชื่อจุด $MAP.pointname'),
+                                  duration: Duration(seconds: 10),
+                                ));
+                                /*Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => survey()),
+                          );*/
+                              },
+                              child: Center(child: Text("Submit")),
+                            )
+                          ],
+                        )),
+                  );
+                },
+              );
+            },
+            label: Text("Send Location"),
+            icon: Icon(Icons.near_me),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void submit() {
+    Navigator.of(context).pop();
+  }
+}
+
+/*
+ตัวแปร
+${userlocation.latitude} long: ${userlocation.longitude
+*/
+class _gpsclass {
+  String pointname;
+  double dose5cm;
+  double dose1m;
+  String note;
+  _gpsclass(
+      {required this.pointname,
+      required this.dose5cm,
+      required this.dose1m,
+      required this.note});
+}
+
+_gpsclass MAP = _gpsclass(pointname: '', dose5cm: 0, dose1m: 0, note: '');
